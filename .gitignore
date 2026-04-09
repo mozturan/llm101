@@ -6,3 +6,6 @@ lightning_logs/
 *.txt
 *.csv
 /openai
+key.txt
+*.zip
+new_articles/
