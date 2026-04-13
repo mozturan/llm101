@@ -9,3 +9,4 @@ lightning_logs/
 key.txt
 *.zip
 new_articles/
+*.pdf
