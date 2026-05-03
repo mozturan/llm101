@@ -13,3 +13,4 @@ new_articles/
 experiment.ipynb
 Custom_Chatbot_for_any_website.ipynb
 .env
+*.png
