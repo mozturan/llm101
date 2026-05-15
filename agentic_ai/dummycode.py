@@ -1,26 +1,28 @@
 import os
 from dotenv import load_dotenv
 from google import genai
+from google.genai import types
 import json
 
-# Load variables from .env into the environment
 load_dotenv()
-
-# Access the key
 api_key = os.getenv("GOOGLE_API_KEY")
-
 if not api_key:
     raise ValueError("API Key not found. Did you set it in the .env file?")
 
-client = genai.Client(api_key=api_key)
 
-# 1. DEFINE TOOLS
-def get_stock_price(ticker):
+# --- Init Client ---
+
+client = genai.Client(api_key=api_key)
+model = "gemini-3.1-flash-lite"
+
+
+# --- DEFINE TOOLS ---
+def get_stock_price(ticker) -> str:
     """Returns the mock stock price for a given ticker."""
     prices = {"AAPL": 150, "TSLA": 200, "GOOG": 2800}
     return f"The price of {ticker} is ${prices.get(ticker, 'unknown')}"
 
-def multiply(a, b):
+def multiply(a, b) -> str:
     """Multiplies two numbers."""
     return f"Result: {float(a) * float(b)}"
 
@@ -50,97 +52,131 @@ TOOLS = {
 }
 
 # Tool descriptions for the LLM
-TOOL_DEFINITIONS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "get_stock_price",
-            "description": "Get the for the requested ticker",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "ticker": {"type": "string", "description": "Ticker name"}
+TOOL_DECLARATIONS = types.Tool(
+    function_declarations=[
+        types.FunctionDeclaration(
+            name="get_stock_price",
+            description="Get the price for the requested ticker",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "ticker": types.Schema(type=types.Type.STRING, description="Ticker name")
                 },
-                "required": ["ticker"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "run_python",
-            "description": "Execute Python code and return the output. Use for calculations, data processing.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "code": {"type": "string", "description": "Python code to execute"}
+                required=["ticker"]
+            )
+        ),
+        types.FunctionDeclaration(
+            name="run_python",
+            description="Execute Python code and return the output. Use for calculations, data processing.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "code": types.Schema(type=types.Type.STRING, description="Python code to execute")
                 },
-                "required": ["code"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_current_time",
-            "description": "Get the current date and time",
-            "parameters": {
-                "type": "object",
-                "properties": {}
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "multiply",
-            "description": "Get multiplication of two values",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "a": {"type": "float", "description": "First value for multiply function"},
-                    "b": {"type": "float", "description": "Second value for multiply function"}
+                required=["code"]
+            )
+        ),
+        types.FunctionDeclaration(
+            name="get_current_time",
+            description="Get the current date and time",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={}
+            )
+        ),
+        types.FunctionDeclaration(
+            name="multiply",
+            description="Get multiplication of two values",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "a": types.Schema(type=types.Type.NUMBER, description="First value for multiply function"),
+                    "b": types.Schema(type=types.Type.NUMBER, description="Second value for multiply function")
                 },
-                "required": ["a", "b"]
-            }
-        }
-    },
-]
+                required=["a", "b"]
+            )
+        )
+    ]
+)
+
+
+
+# --- Config — system instruction + tools defined once ---
+
+CONFIG = types.GenerateContentConfig(
+    system_instruction="""You are a helpful AI agent. 
+    You have access to tools.
+    Use them step by step to achieve the user's goal. 
+    Think carefully about which tool to use and why. 
+    When you have enough information, provide a final answer.""",
+    tools=[TOOL_DECLARATIONS]
+)
+
 
 
 # --- The Agent Loop ---
 
 def run_agent(user_goal: str, max_iterations: int = 10):
     
-    system_prompt = """You are a helpful AI agent. You have access to tools.
-Use them step by step to achieve the user's goal.
-Think carefully about which tool to use and why.
-When you have enough information, provide a final answer."""
-    
-    messages = [
-        {
-            "role": "system",
-            "content": """You are a helpful AI agent. You have access to tools.
-Use them step by step to achieve the user's goal.
-Think carefully about which tool to use and why.
-When you have enough information, provide a final answer."""
-        },
-        {
-            "role": "user",
-            "content": user_goal
-        }
-    ]
+    print(f"User Goal: {user_goal}\n")
+
+    # Conversation history - managed manually
+    contents = [
+        types.Content(
+            role="user",
+            parts=[types.Part(text=user_goal)]
+        )]
 
 
-system_prompt = "Sen insanların sorularına cevap veren bilge birisin ve Yoda gibi konuşuyorsun."
-user_prompt = "Hayatın anlamını nasıl bulabilirim?"
+    for iteration in range(max_iterations):
+        print(f"--- Iteration {iteration + 1} ---")
 
-response = client.models.generate_content(
-    model="gemini-3.1-flash-lite",
-        config={
-            "system_instruction": system_prompt
-        },
-        contents=[user_prompt]
-)
+        # Generate response from the model
+        response = client.models.generate_content(
+            model=model,
+            config=CONFIG,
+            contents=contents
+        )
 
-print(response.text)
+        candidate = response.candidates[0]
+        # Add model's response to history
+        contents.append(
+            types.Content(
+                role="model",
+                parts=[types.Part(text=candidate.content.parts)]
+            )
+        )
+
+        # Separate tool calls from text parts
+        tool_calls = []
+        text_parts = []
+
+        for part in candidate.content.parts:
+            if part.function_call:
+                tool_calls.append(part.function_call)
+            else:
+                text_parts.append(part.text)
+        
+        # Process tool calls
+        for tool_call in tool_calls:
+            tool_name = tool_call.name
+            arguments = json.loads(tool_call.arguments)
+
+            if tool_name in TOOLS:
+                print(f"Calling tool: {tool_name} with arguments {arguments}")
+                result = TOOLS[tool_name](**arguments)
+                print(f"Tool result: {result}")
+
+                # Add tool result to conversation history
+                contents.append(
+                    types.Content(
+                        role="tool",
+                        parts=[types.Part(text=result)]
+                    )
+                )
+            else:
+                print(f"Unknown tool: {tool_name}")
+
+    pass
+
+run_agent("What is the current price of AAPL stock and what is 12 multiplied by 15?")
