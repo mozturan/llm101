@@ -143,7 +143,7 @@ def run_agent(user_goal: str, max_iterations: int = 10):
         contents.append(
             types.Content(
                 role="model",
-                parts=[types.Part(text=candidate.content.parts)]
+                parts=candidate.content.parts
             )
         )
 
@@ -157,26 +157,57 @@ def run_agent(user_goal: str, max_iterations: int = 10):
             else:
                 text_parts.append(part.text)
         
-        # Process tool calls
-        for tool_call in tool_calls:
-            tool_name = tool_call.name
-            arguments = json.loads(tool_call.arguments)
-
-            if tool_name in TOOLS:
-                print(f"Calling tool: {tool_name} with arguments {arguments}")
-                result = TOOLS[tool_name](**arguments)
-                print(f"Tool result: {result}")
-
-                # Add tool result to conversation history
-                contents.append(
-                    types.Content(
-                        role="tool",
-                        parts=[types.Part(text=result)]
+        # If there are tool calls — execute them
+        if tool_calls:
+            tool_result_parts = []
+            
+            for tool_call in tool_calls:
+                tool_name = tool_call.name
+                # Convert args to plain dict
+                tool_args = dict(tool_call.args) if tool_call.args else {}
+                
+                print(f"Tool called: {tool_name}")
+                print(f"Arguments: {tool_args}")
+                
+                # Execute the actual function
+                if tool_name in TOOLS:
+                    if tool_args:
+                        result = TOOLS[tool_name](**tool_args)
+                    else:
+                        result = TOOLS[tool_name]()
+                else:
+                    result = f"Error: tool '{tool_name}' not found"
+                
+                print(f"Result: {result}\n")
+                
+                # Build function response — include id for Gemini 3 models
+                tool_result_parts.append(
+                    types.Part(
+                        function_response=types.FunctionResponse(
+                            id=tool_call.id,    # Required for Gemini 3 models
+                            name=tool_name,
+                            response={"result": result}
+                        )
                     )
                 )
-            else:
-                print(f"Unknown tool: {tool_name}")
+            
+            # Add all tool results to history as a user turn
+            contents.append(
+                types.Content(
+                    role="user",
+                    parts=tool_result_parts
+                )
+            )
+        
+        else:
+            # No tool calls — this is the final answer
+            final_answer = "\n".join(text_parts) if text_parts else "No response generated."
+            print("\n=== FINAL ANSWER ===")
+            print(final_answer)
+            return final_answer
+    
+    return "Max iterations reached without final answer."
 
-    pass
+if __name__ == "__main__":
 
-run_agent("What is the current price of AAPL stock and what is 12 multiplied by 15?")
+    run_agent("What is the current price of AAPL stock and what is 12 multiplied by 15?")
