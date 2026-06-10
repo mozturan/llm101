@@ -114,7 +114,6 @@ CONFIG = types.GenerateContentConfig(
 )
 
 
-
 # --- The Agent Loop ---
 
 def run_agent(user_goal: str, max_iterations: int = 10, verbose: bool = False):
