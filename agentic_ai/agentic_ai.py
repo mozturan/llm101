@@ -71,12 +71,56 @@ def get_files_info(working_directory: str, directory: str = ".") -> str:
     
     return "Entries in directory:\n" + "\n".join(entries_info) if entries_info else "No files or directories found in the directory."
 
+def get_file_content(working_directory: str, file_path: str) -> str:
+    """Read and return the content of a specified file."""
+    abs_working_directory = os.path.abspath(working_directory)
+    target_file = os.path.join(abs_working_directory, file_path)
+
+    if not os.path.exists(target_file):
+        return f"Error: File '{file_path}' does not exist."
+    
+    if not os.path.isfile(target_file):
+        return f"Error: '{file_path}' is not a file."
+    max_size = 5 * 1024 * 1024  # 5 MB
+    if os.path.getsize(target_file) > max_size:
+        return f"Error: File '{file_path}' exceeds the maximum allowed size of 5 MB."
+    
+    max_characters = 10000
+    try:
+        with open(target_file, 'r') as f:
+            content = f.read(max_characters)
+            if len(content) == max_characters:
+                return f"Error: File '{file_path}' exceeds the maximum allowed character limit of {max_characters}."
+        return content
+    except Exception as e:
+        return f"Error reading file: {str(e)}"
+
+def write_file(working_directory: str, file_path: str, content: str) -> str:
+    """Write content to a specified file."""
+    abs_working_directory = os.path.abspath(working_directory)
+    target_file = os.path.join(abs_working_directory, file_path)
+
+    # Ensure the target file is within the working directory
+    if not os.path.commonpath([abs_working_directory, target_file]) == abs_working_directory:
+        return "Error: Invalid file path. Access denied."
+
+    try:
+        with open(target_file, 'w') as f:
+            f.write(content)
+        return f"Content successfully written to '{file_path}'."
+    except Exception as e:
+        return f"Error writing to file: {str(e)}"
+    
+
 # Map tool names to actual functions
 TOOLS = {
     "get_stock_price": get_stock_price,
     "multiply": multiply,
     "run_python": run_python,
-    "get_current_time": get_current_time
+    "get_current_time": get_current_time,
+    "get_files_info": get_files_info,
+    "get_file_content": get_file_content,
+    "write_file": write_file
 }
 
 # Tool descriptions for the LLM
@@ -122,6 +166,43 @@ TOOL_DECLARATIONS = types.Tool(
                     "b": types.Schema(type=types.Type.NUMBER, description="Second value for multiply function")
                 },
                 required=["a", "b"]
+            )
+        ),
+        types.FunctionDeclaration(
+            name="get_files_info",
+            description="List files in a directory and return their names and sizes.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "working_directory": types.Schema(type=types.Type.STRING, description="The base directory for file operations"),
+                    "directory": types.Schema(type=types.Type.STRING, description="Target directory to list files from, relative to working_directory. Use '.' for the working directory.")
+                },
+                required=["working_directory", "directory"]
+            )
+        ),
+        types.FunctionDeclaration(
+            name="get_file_content",
+            description="Read and return the content of a specified file.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "working_directory": types.Schema(type=types.Type.STRING, description="The base directory for file operations"),
+                    "file_path": types.Schema(type=types.Type.STRING, description="Path to the file to read, relative to working_directory")
+                },
+                required=["working_directory", "file_path"]
+            )
+        ),
+        types.FunctionDeclaration(
+            name="write_file",
+            description="Write content to a specified file.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "working_directory": types.Schema(type=types.Type.STRING, description="The base directory for file operations"),
+                    "file_path": types.Schema(type=types.Type.STRING, description="Path to the file to write, relative to working_directory"),
+                    "content": types.Schema(type=types.Type.STRING, description="Content to write to the file")
+                },
+                required=["working_directory", "file_path", "content"]
             )
         )
     ]
