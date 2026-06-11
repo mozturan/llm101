@@ -4,6 +4,8 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 import json
+import os
+
 
 load_dotenv()
 api_key = os.getenv("GOOGLE_API_KEY")
@@ -43,6 +45,31 @@ def run_python(code: str) -> str:
 def get_current_time() -> str:
     from datetime import datetime
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+def get_files_info(working_directory: str, directory: str = ".") -> str:
+    """List files in a directory and return their names and sizes."""
+    abs_working_directory = os.path.abspath(working_directory)
+    if directory == ".":
+        target_directory = abs_working_directory
+    else:
+        target_directory = os.path.join(abs_working_directory, directory)
+
+    if not os.path.exists(target_directory):
+        return f"Error: Directory '{directory}' does not exist."
+    
+    if not os.path.isdir(target_directory):
+        return f"Error: '{directory}' is not a directory."
+
+    entries_info = []
+    for filename in os.listdir(target_directory):
+        file_path = os.path.join(target_directory, filename)
+        if os.path.isfile(file_path):
+            size = os.path.getsize(file_path)
+            entries_info.append(f"{filename} ({size} bytes)")
+        elif os.path.isdir(file_path):
+            entries_info.append(f"{filename}/ (directory)")
+    
+    return "Entries in directory:\n" + "\n".join(entries_info) if entries_info else "No files or directories found in the directory."
 
 # Map tool names to actual functions
 TOOLS = {
@@ -99,7 +126,6 @@ TOOL_DECLARATIONS = types.Tool(
         )
     ]
 )
-
 
 
 # --- Config — system instruction + tools defined once ---
