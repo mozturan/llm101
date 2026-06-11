@@ -220,15 +220,17 @@ def run_agent(user_goal: str, max_iterations: int = 10, verbose: bool = False):
     return "Max iterations reached without final answer."
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Chatbot")
-    parser.add_argument("user_prompt", type=str, help="User prompt")
-    parser.add_argument("--verbose", "-v", action="store_true", help="Show verbose debug output")
+    # parser = argparse.ArgumentParser(description="Chatbot")
+    # parser.add_argument("user_prompt", type=str, help="User prompt")
+    # parser.add_argument("--verbose", "-v", action="store_true", help="Show verbose debug output")
 
-    args = parser.parse_args()
+    # args = parser.parse_args()
 
-    # prompt_ = "What is the current price of AAPL stock and what is 12 multiplied by 15?"
-
-    if not args.user_prompt:
-        print("Please provide a user prompt.")
-    else:
-        run_agent(args.user_prompt, verbose=args.verbose)
+    #if no prompt provided, use default one for testing
+    # if not args.user_prompt:
+    #     args.user_prompt = "What is the current price of AAPL stock and what is 12 multiplied by 15?"
+    user_prompt = "What is the current price of AAPL stock and what is 12 multiplied by 15?"
+    # if not args.user_prompt:
+    #     print("Please provide a user prompt.")
+    # else:
+    run_agent(user_prompt) #, verbose=args.verbose)

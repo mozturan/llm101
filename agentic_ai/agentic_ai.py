@@ -1,10 +1,12 @@
 import argparse
 import os
+import multiprocessing
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 import json
-import os
+import io
+import contextlib
 
 
 load_dotenv()
@@ -28,19 +30,6 @@ def get_stock_price(ticker) -> str:
 def multiply(a, b) -> str:
     """Multiplies two numbers."""
     return f"Result: {float(a) * float(b)}"
-
-def run_python(code: str) -> str:
-    """Execute Python code safely and return output."""
-    import io
-    import contextlib
-    
-    output = io.StringIO()
-    try:
-        with contextlib.redirect_stdout(output):
-            exec(code, {})
-        return output.getvalue() or "Code executed successfully, no output."
-    except Exception as e:
-        return f"Error: {str(e)}"
 
 def get_current_time() -> str:
     from datetime import datetime
@@ -111,12 +100,89 @@ def write_file(working_directory: str, file_path: str, content: str) -> str:
     except Exception as e:
         return f"Error writing to file: {str(e)}"
     
+def run_python_file(working_directory: str, file_path: str) -> str:
+    """Execute a Python file and return its output."""
+    abs_working_directory = os.path.abspath(working_directory)
+    normalized_path = file_path.lstrip("/\\") if os.path.isabs(file_path) else file_path
+    target_file = os.path.join(abs_working_directory, normalized_path)
+    timeout_seconds = 10  # Set a timeout for code execution
+
+    if not os.path.exists(target_file):
+        return f"Error: File '{file_path}' does not exist."
+    
+    if not os.path.isfile(target_file):
+        return f"Error: '{file_path}' is not a file."
+    
+    # Ensure the target file is within the working directory
+    if not os.path.commonpath([abs_working_directory, target_file]) == abs_working_directory:
+        return "Error: Invalid file path. Access denied."
+
+    try:
+        with open(target_file, 'r') as f:
+            code = f.read()
+
+        def target(conn, code_str):
+            try:
+                safe_builtins = {
+                    "__import__": __import__,
+                    "__build_class__": __build_class__,
+                    "print": print,
+                    "str": str,
+                    "int": int,
+                    "float": float,
+                    "bool": bool,
+                    "dict": dict,
+                    "list": list,
+                    "set": set,
+                    "tuple": tuple,
+                    "len": len,
+                    "range": range,
+                    "enumerate": enumerate,
+                    "max": max,
+                    "min": min,
+                    "abs": abs,
+                    "sum": sum,
+                    "Exception": Exception,
+                    "BaseException": BaseException,
+                }
+                exec_globals = {"__builtins__": safe_builtins, "__name__": "__main__"}
+                with io.StringIO() as buf, contextlib.redirect_stdout(buf):
+                    import sys
+                    script_dir = os.path.dirname(target_file)
+                    if script_dir and script_dir not in sys.path:
+                        sys.path.insert(0, script_dir)
+                    os.chdir(script_dir)
+                    sys.argv = [target_file]
+                    exec(code_str, exec_globals)
+                    conn.send(buf.getvalue() or "Code executed successfully with no output.")
+            except Exception as e:
+                conn.send(f"Error executing Python code: {str(e)}")
+            finally:
+                conn.close()
+
+        parent_conn, child_conn = multiprocessing.Pipe()
+        process = multiprocessing.Process(target=target, args=(child_conn, code))
+        process.start()
+        process.join(timeout_seconds)
+
+        if process.is_alive():
+            process.terminate()
+            process.join()
+            return f"Error: Code execution exceeded timeout of {timeout_seconds} seconds."
+
+        if parent_conn.poll():
+            return parent_conn.recv()
+
+        return "Error: No response from execution process."
+    except Exception as e:
+        return f"Error executing Python code: {str(e)}"
+
 
 # Map tool names to actual functions
 TOOLS = {
     "get_stock_price": get_stock_price,
     "multiply": multiply,
-    "run_python": run_python,
+    "run_python_file": run_python_file,
     "get_current_time": get_current_time,
     "get_files_info": get_files_info,
     "get_file_content": get_file_content,
@@ -138,14 +204,15 @@ TOOL_DECLARATIONS = types.Tool(
             )
         ),
         types.FunctionDeclaration(
-            name="run_python",
-            description="Execute Python code and return the output. Use for calculations, data processing.",
+            name="run_python_file",
+            description="Execute a Python file and return the output. Use for calculations, data processing.",
             parameters=types.Schema(
                 type=types.Type.OBJECT,
                 properties={
-                    "code": types.Schema(type=types.Type.STRING, description="Python code to execute")
+                    "working_directory": types.Schema(type=types.Type.STRING, description="The base directory for file operations"),
+                    "file_path": types.Schema(type=types.Type.STRING, description="Path to the Python file to execute, relative to working_directory")
                 },
-                required=["code"]
+                required=["working_directory", "file_path"]
             )
         ),
         types.FunctionDeclaration(
